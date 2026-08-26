@@ -2717,6 +2717,7 @@ version = "0.56.0"
 dependencies = [
  "bstr",
  "document-features",
+ "dua-core",
  "gix-attributes",
  "gix-discover",
  "gix-features",
@@ -2731,6 +2732,7 @@ dependencies = [
  "gix-testtools",
  "gix-validate",
  "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
