@@ -3224,8 +3224,9 @@ impl App {
             return None;
         }
         self.selected
-            .filter(|index| !self.is_row_hidden(*index))
-            .and_then(|index| self.rows.get(index))
+            .and_then(|index| self.rows.get(index).map(|row| (index, row)))
+            .filter(|(index, row)| !self.is_row_hidden(*index) || self.worktree_head == Some(row.id))
+            .map(|(_, row)| row)
             .filter(|row| !self.known_merge_descendants.contains(&row.id))
             .map(|row| row.id)
     }
@@ -4602,6 +4603,11 @@ mod tests {
             app.selected.map(|index| app.rows[index].id),
             Some(id(1)),
             "the empty view selects its hidden base"
+        );
+        assert_eq!(
+            app.paste_insert_target(),
+            Some(id(1)),
+            "the checked-out base accepts a pasted first stack commit"
         );
         app.set_new_commit_availability(Some(&Changes {
             has_tracked_changes: true,

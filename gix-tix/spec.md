@@ -1354,16 +1354,19 @@ space first; changes blocks adapt within the remaining history width.
   another occurrence of its change above the target without removing the source
   occurrence, including when the target is the source's current parent. A copy
   of an active review commit is ordinary and does not share its review resources.
-  The new copy becomes detached `HEAD`; the branch
-  checked out before the operation remains visible through the ordinary HEAD
-  pin. If the target is an ancestor of the source, that source occurrence is
-  retained in its original logical position while its branch follows the
-  necessary rewrite. Git notes are copied to the new occurrence. Copy-insert
-  uses the history-todo conflict and continuation rules.
+  When inserted away from the current `HEAD`, the new copy becomes detached
+  `HEAD`; the branch checked out before the operation remains visible through
+  the ordinary HEAD pin. When inserted directly above the current `HEAD`, only
+  its attached branch advances to the copy and remains attached; every other ref
+  at the target stays unchanged. If the target is an ancestor of the source,
+  that source occurrence is retained in its original logical position while its
+  branch follows the necessary rewrite. Git notes are copied to the new
+  occurrence. Copy-insert uses the history-todo conflict and continuation rules.
 - Bracketed paste in the history view trims surrounding whitespace and accepts
   one uniquely resolvable hexadecimal object-ID prefix. If that object is a
   commit, its change is copy-inserted above the commit at the cursor using the
-  same progress, conflict, checkout, and undo behavior as `a y`. Other text,
+  same progress, conflict, checkout, and undo behavior as `a y`. The selected
+  hidden base of an empty checked-out branch is a valid target. Other text,
   ambiguous or missing IDs, non-commit objects, and unavailable targets produce
   an attention message without changing the repository.
 - Move-insert requires selecting a non-root, single-parent `HEAD`, then limits

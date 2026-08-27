@@ -610,10 +610,28 @@ pub(crate) fn copy_insert_plan(
         .copied()
         .filter(|id| !non_leaves.contains(id))
         .collect();
-    let expected_refs = capture_refs(repo, &ref_scope, &tips)?;
+    let mut expected_refs = capture_refs(repo, &ref_scope, &tips)?;
+    let head = repo.head()?;
+    let target_is_head = head.id().is_some_and(|id| id == target);
+    let checkout_reference = if target_is_head {
+        head.referent_name().map(ToOwned::to_owned)
+    } else {
+        None
+    };
+    if target_is_head {
+        for expected in expected_refs.iter_mut().filter(|expected| expected.target == target) {
+            expected.follows_tip = false;
+            if checkout_reference
+                .as_ref()
+                .is_some_and(|reference| reference == &expected.name)
+            {
+                expected.placement = Some(PlanParent::Step(0));
+            }
+        }
+    }
     let checkout = Some(PlanCheckout {
         target: PlanParent::Step(0),
-        reference: None,
+        reference: checkout_reference,
     });
 
     Ok(Plan {
@@ -4697,6 +4715,44 @@ mod tests {
                 .map(gix::Id::detach),
             Some(copied),
             "copying at the current parent creates two consecutive occurrences"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn copy_insert_onto_checked_out_tip_advances_only_its_branch() -> gix_testtools::Result {
+        let fixture = gix_testtools::scripted_fixture_writable("rebase_edit.sh")?;
+        let repo = open(fixture.path())?;
+        let source = repo.head_id()?.detach();
+        drop(repo);
+
+        git(fixture.path(), &["checkout", "-q", "--orphan", "hidden"])?;
+        git(fixture.path(), &["rm", "-q", "-r", "-f", "."])?;
+        std::fs::write(fixture.path().join("hidden"), b"hidden\n")?;
+        git(fixture.path(), &["add", "hidden"])?;
+        git(fixture.path(), &["commit", "-q", "-m", "hidden base"])?;
+        git(fixture.path(), &["checkout", "-q", "-b", "empty"])?;
+
+        let repo = open(fixture.path())?;
+        let target = repo.head_id()?.detach();
+        let graph = super::super::loaded_explicit_view_graph(
+            &repo,
+            &["HEAD".into(), source.to_string().into()],
+            &["hidden".into()],
+        )?;
+        let outcome = perform_plan(&repo, &graph, copy_insert_plan(&repo, &graph, source, target)?)?.complete()?;
+        let copied = outcome.selected.context("copy-insert selects the new copy")?;
+
+        assert_eq!(repo.find_reference("refs/heads/empty")?.id(), copied);
+        assert_eq!(
+            repo.find_reference("refs/heads/hidden")?.id(),
+            target,
+            "another ref on the hidden base stays read-only"
+        );
+        assert_eq!(
+            outcome.checkout_reference.as_ref().map(gix::refs::FullName::as_bstr),
+            Some(b"refs/heads/empty".as_bstr()),
+            "HEAD stays attached to the branch advanced by the paste"
         );
         Ok(())
     }
