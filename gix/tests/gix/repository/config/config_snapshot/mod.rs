@@ -574,6 +574,25 @@ mod file_mut {
                 "writing preserves file permissions"
             );
         }
+        #[cfg(windows)]
+        {
+            let (repo, _tmp) = repo_rw_opts("make_config_repo.sh", options_with_includes())?;
+            let target_path = repo.git_dir().parent().expect("worktree repository").join("a.config");
+            let mut permissions = std::fs::metadata(&target_path)?.permissions();
+            permissions.set_readonly(true);
+            std::fs::set_permissions(&target_path, permissions)?;
+
+            let mut file = repo.config_file_mut(&target_path)?;
+            file.set_raw_value("a.local-override", "written")?;
+            file.commit()?;
+
+            let mut permissions = std::fs::metadata(&target_path)?.permissions();
+            let is_readonly = permissions.readonly();
+            #[expect(clippy::permissions_set_readonly_false, reason = "this test only runs on Windows")]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(&target_path, permissions)?;
+            assert!(is_readonly, "writing preserves read-only file permissions");
+        }
         Ok(())
     }
 
