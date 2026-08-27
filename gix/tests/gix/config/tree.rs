@@ -28,6 +28,20 @@ mod keys {
         );
         assert_eq!(gix::config::Tree::AUTHOR.name(), "author");
         assert_eq!(gix::config::tree::Author.keys().len(), 2);
+        assert!(
+            gix::config::tree::Core
+                .keys()
+                .iter()
+                .any(|key| key.name() == "configLockTimeout"),
+            "supported keys are discoverable through config-tree traversal"
+        );
+        assert!(
+            gix::config::tree::Core
+                .keys()
+                .iter()
+                .any(|key| key.name() == "sharedRepository"),
+            "core.sharedRepository is discoverable through config-tree traversal"
+        );
         assert_eq!(gix::config::tree::Author::NAME.name(), "name");
         assert_eq!(gix::config::tree::Author::EMAIL.name(), "email");
         assert_eq!(

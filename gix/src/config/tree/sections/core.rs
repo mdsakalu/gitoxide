@@ -36,6 +36,9 @@ impl Core {
     pub const FS_CACHE: keys::Boolean = keys::Boolean::new_boolean("fsCache", &config::Tree::CORE);
     /// The `core.ignoreCase` key.
     pub const IGNORE_CASE: keys::Boolean = keys::Boolean::new_boolean("ignoreCase", &config::Tree::CORE);
+    /// The `core.configLockTimeout` key.
+    pub const CONFIG_LOCK_TIMEOUT: keys::LockTimeout =
+        keys::LockTimeout::new_lock_timeout("configLockTimeout", &config::Tree::CORE);
     /// The `core.filesRefLockTimeout` key.
     pub const FILES_REF_LOCK_TIMEOUT: keys::LockTimeout =
         keys::LockTimeout::new_lock_timeout("filesRefLockTimeout", &config::Tree::CORE);
@@ -64,6 +67,8 @@ impl Core {
     /// The `core.repositoryFormatVersion` key.
     pub const REPOSITORY_FORMAT_VERSION: keys::UnsignedInteger =
         keys::UnsignedInteger::new_unsigned_integer("repositoryFormatVersion", &config::Tree::CORE);
+    /// The `core.sharedRepository` key.
+    pub const SHARED_REPOSITORY: keys::Any = keys::Any::new("sharedRepository", &config::Tree::CORE);
     /// The `core.symlinks` key.
     pub const SYMLINKS: keys::Boolean = keys::Boolean::new_boolean("symlinks", &config::Tree::CORE);
     /// The `core.trustCTime` key.
@@ -127,6 +132,7 @@ impl Section for Core {
             &Self::FILE_MODE,
             &Self::FS_CACHE,
             &Self::IGNORE_CASE,
+            &Self::CONFIG_LOCK_TIMEOUT,
             &Self::FILES_REF_LOCK_TIMEOUT,
             &Self::PACKED_REFS_TIMEOUT,
             &Self::MULTIPACK_INDEX,
@@ -134,6 +140,7 @@ impl Section for Core {
             &Self::LOG_ALL_REF_UPDATES,
             &Self::PRECOMPOSE_UNICODE,
             &Self::REPOSITORY_FORMAT_VERSION,
+            &Self::SHARED_REPOSITORY,
             &Self::SYMLINKS,
             &Self::TRUST_C_TIME,
             &Self::WORKTREE,

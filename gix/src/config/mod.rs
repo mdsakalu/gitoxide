@@ -4,7 +4,9 @@ use gix_features::threading::OnceCell;
 use crate::{Repository, bstr::BString, repository::identity};
 
 pub(crate) mod cache;
+pub mod file_mut;
 mod snapshot;
+pub use file_mut::FileMut;
 #[cfg(feature = "credentials")]
 pub use snapshot::credential_helpers;
 
@@ -29,8 +31,6 @@ pub struct Snapshot<'repo> {
 /// Note that these values won't update even if the underlying file(s) change.
 ///
 /// Use [`forget()`][Self::forget()] to not apply any of the changes.
-// TODO: make it possible to load snapshots with reloading via .config() and write mutated snapshots back to disk which should be the way
-//       to affect all instances of a repo, probably via `config_mut()` and `config_mut_at()`.
 pub struct SnapshotMut<'repo> {
     /// The owning repository.
     pub repo: Option<&'repo mut Repository>,
