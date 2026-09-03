@@ -16,7 +16,7 @@ use super::Format;
 pub struct Options {
     /// The signature format.
     pub format: Format,
-    /// The external signing program or command.
+    /// The external signing program.
     pub program: OsString,
     /// Additional arguments passed to the signing program before Git's fixed arguments.
     pub program_arguments: Vec<OsString>,
@@ -111,9 +111,7 @@ fn sign(payload: &[u8], options: &Options) -> Result<BString, Error> {
 
 fn command(options: &Options) -> gix_command::Prepare {
     options.environment.iter().fold(
-        gix_command::prepare(&options.program)
-            .command_may_be_shell_script()
-            .args(&options.program_arguments),
+        gix_command::prepare(&options.program).args(&options.program_arguments),
         |command, (key, value)| command.env(key, value),
     )
 }
@@ -168,6 +166,7 @@ fn sign_ssh(payload: &[u8], options: &Options) -> Result<BString, Error> {
         // Unlike literal keys, resolved key paths can be passed directly to `ssh-keygen -f`.
         None => (options.signing_key.clone(), false),
     };
+    let key = super::ssh_path_argument(std::path::Path::new(&key));
     let mut payload_file = secure_temporary_file()?;
     write_temporary(&mut payload_file, payload)?;
     let payload_path = temporary_path(&mut payload_file)?;
@@ -179,7 +178,7 @@ fn sign_ssh(payload: &[u8], options: &Options) -> Result<BString, Error> {
         command = command.arg("-U");
     }
     let output = command
-        .arg(&payload_path)
+        .arg(super::ssh_path_argument(&payload_path))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -267,4 +266,33 @@ fn strip_cr_before_lf(input: Vec<u8>) -> Vec<u8> {
         }
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn programs_with_spaces_are_invoked_directly() {
+        let program = OsStr::new("a directory/signer");
+        let command: std::process::Command = command(&Options {
+            format: Format::OpenPgp,
+            program: program.into(),
+            program_arguments: vec!["argument with spaces".into()],
+            signing_key: "key".into(),
+            environment: Vec::new(),
+        })
+        .into();
+
+        assert_eq!(
+            command.get_program(),
+            program,
+            "a signer pathname is passed directly instead of being interpreted by a shell"
+        );
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [OsStr::new("argument with spaces")],
+            "signer arguments remain separate from the program pathname"
+        );
+    }
 }

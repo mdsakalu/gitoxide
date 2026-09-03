@@ -1,7 +1,7 @@
 use gix_hash::ObjectId;
 use gix_ref::{
     FullName, PartialNameRef, Target,
-    transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog},
+    transaction::{PreviousValue, RefEdit},
 };
 
 use crate::{Reference, bstr::BString, ext::ReferenceExt, reference};
@@ -19,15 +19,12 @@ impl crate::Repository {
         constraint: PreviousValue,
     ) -> Result<Reference<'_>, reference::edit::Error> {
         let id = target.into();
-        let mut edits = self.edit_reference(RefEdit {
-            change: Change::Update {
-                log: Default::default(),
-                expected: constraint,
-                new: Target::Object(id),
-            },
-            name: format!("refs/tags/{}", name.as_ref()).try_into()?,
-            deref: false,
-        })?;
+        let mut edits = self.edit_reference(RefEdit::update(
+            format!("refs/tags/{}", name.as_ref()).try_into()?,
+            id,
+            constraint,
+            "",
+        ))?;
         assert_eq!(edits.len(), 1, "reference splits should ever happen");
         let edit = edits.pop().expect("exactly one item");
         Ok(Reference {
@@ -44,12 +41,12 @@ impl crate::Repository {
     ///
     /// Namespaces allow to partition references, and is configured per `Easy`.
     pub fn namespace(&self) -> Option<&gix_ref::Namespace> {
-        self.refs.namespace.as_ref()
+        self.refs.namespace()
     }
 
     /// Remove the currently set reference namespace and return it, affecting only this `Easy`.
     pub fn clear_namespace(&mut self) -> Option<gix_ref::Namespace> {
-        self.refs.namespace.take()
+        self.refs.replace_namespace(None)
     }
 
     /// Set the reference namespace to the given value, like `"foo"` or `"foo/bar"`.
@@ -64,7 +61,7 @@ impl crate::Repository {
         gix_validate::reference::name::Error: From<E>,
     {
         let namespace = gix_ref::namespace::expand(namespace)?;
-        Ok(self.refs.namespace.replace(namespace))
+        Ok(self.refs.replace_namespace(Some(namespace)))
     }
 
     // TODO: more tests or usage
@@ -102,19 +99,7 @@ impl crate::Repository {
         constraint: PreviousValue,
         log_message: BString,
     ) -> Result<Reference<'_>, reference::edit::Error> {
-        let mut edits = self.edit_reference(RefEdit {
-            change: Change::Update {
-                log: LogChange {
-                    mode: RefLog::AndReference,
-                    force_create_reflog: false,
-                    message: log_message,
-                },
-                expected: constraint,
-                new: Target::Object(id),
-            },
-            name,
-            deref: false,
-        })?;
+        let mut edits = self.edit_reference(RefEdit::update(name, id, constraint, log_message))?;
         assert_eq!(
             edits.len(),
             1,
@@ -323,14 +308,15 @@ impl crate::Repository {
     pub fn find_reference<'a, Name, E>(&self, name: Name) -> Result<Reference<'_>, reference::find::existing::Error>
     where
         Name: TryInto<&'a PartialNameRef, Error = E> + Clone,
-        gix_ref::file::find::Error: From<E>,
+        gix_validate::reference::name::Error: From<E>,
     {
         // TODO: is there a way to just pass `partial_name` to `try_find_reference()`? Compiler freaks out then
         //       as it still wants to see `E` there, not `Infallible`.
-        let partial_name = name
-            .clone()
-            .try_into()
-            .map_err(|err| reference::find::Error::Find(gix_ref::file::find::Error::from(err)))?;
+        let partial_name = name.clone().try_into().map_err(|err| {
+            reference::find::Error::Find(gix_ref::store::find::Error::RefnameValidation(
+                gix_validate::reference::name::Error::from(err),
+            ))
+        })?;
         self.try_find_reference(name)?
             .ok_or_else(|| reference::find::existing::Error::NotFound {
                 name: partial_name.to_owned(),
@@ -370,7 +356,7 @@ impl crate::Repository {
     pub fn try_find_reference<'a, Name, E>(&self, name: Name) -> Result<Option<Reference<'_>>, reference::find::Error>
     where
         Name: TryInto<&'a PartialNameRef, Error = E>,
-        gix_ref::file::find::Error: From<E>,
+        gix_validate::reference::name::Error: From<E>,
     {
         match self.refs.try_find(name) {
             Ok(r) => match r {

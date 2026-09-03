@@ -1,6 +1,6 @@
 use gix_ref::{
     Category, FullName,
-    transaction::{Change, PreviousValue, RefEdit, RefLog},
+    transaction::{PreviousValue, RefEdit},
 };
 
 /// Delete local branches.
@@ -37,7 +37,7 @@ pub mod delete {
         #[error("Could not open a worktree repository")]
         OpenWorktreeRepo(#[source] crate::open::Error),
         #[error("Failed to follow a symbolic reference while inspecting worktrees")]
-        FollowSymref(#[source] gix_ref::file::find::existing::Error),
+        FollowSymref(#[source] gix_ref::store::find::existing::Error),
         #[error("Could not acquire the local configuration lock")]
         ConfigLock(#[source] gix_lock::acquire::Error),
         #[error("Could not read the local configuration")]
@@ -104,14 +104,7 @@ impl crate::Repository {
 
         let edits: Vec<_> = names
             .iter()
-            .map(|name| RefEdit {
-                change: Change::Delete {
-                    expected: PreviousValue::Any,
-                    log: RefLog::AndReference,
-                },
-                name: name.clone(),
-                deref: false,
-            })
+            .map(|name| RefEdit::delete(name.clone(), PreviousValue::Any))
             .collect();
 
         let config_path = self.common_dir().join("config");

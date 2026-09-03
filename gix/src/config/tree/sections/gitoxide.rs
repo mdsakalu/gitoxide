@@ -168,6 +168,16 @@ mod subsections {
                 .with_environment_override("GIX_EXTERNAL_COMMAND_STDERR");
 
         /// The `gitoxide.core.refsNamespace` key.
+        ///
+        /// It selects the reference namespace used when opening or reloading a repository. Namespaces let multiple
+        /// logical repositories share the same object database without exposing or overwriting each other's branches
+        /// and tags. For example, in namespace `foo`, the logical reference `refs/heads/main` is read from and written
+        /// to `refs/namespaces/foo/refs/heads/main`, with the namespace hidden from returned reference names.
+        ///
+        /// Only reference access is scoped; the object database, configuration, and worktree remain shared. If unset,
+        /// references are accessed without a namespace. When repository-local environment variables are permitted,
+        /// `GIT_NAMESPACE` overrides this key and accepts the same syntax. Slash-separated values form nested
+        /// namespaces, so `foo/bar` expands to `refs/namespaces/foo/refs/namespaces/bar/`.
         pub const REFS_NAMESPACE: RefsNamespace =
             keys::Any::new_with_validate("refsNamespace", &Gitoxide::CORE, super::validate::RefsNamespace)
                 .with_environment_override("GIT_NAMESPACE");
@@ -333,12 +343,10 @@ mod subsections {
     pub struct Author;
 
     impl Author {
-        /// The `gitoxide.author.nameFallback` key.
-        pub const NAME_FALLBACK: keys::Any =
-            keys::Any::new("nameFallback", &Gitoxide::AUTHOR).with_environment_override("GIT_AUTHOR_NAME");
-        /// The `gitoxide.author.emailFallback` key.
-        pub const EMAIL_FALLBACK: keys::Any =
-            keys::Any::new("emailFallback", &Gitoxide::AUTHOR).with_environment_override("GIT_AUTHOR_EMAIL");
+        /// The `gitoxide.author.nameFallback` key, used after `author.name` and `user.name`.
+        pub const NAME_FALLBACK: keys::Any = keys::Any::new("nameFallback", &Gitoxide::AUTHOR);
+        /// The `gitoxide.author.emailFallback` key, used after `author.email` and `user.email`.
+        pub const EMAIL_FALLBACK: keys::Any = keys::Any::new("emailFallback", &Gitoxide::AUTHOR);
     }
 
     impl Section for Author {
@@ -360,7 +368,9 @@ mod subsections {
     pub struct User;
 
     impl User {
-        /// The `gitoxide.user.emailFallback` key.
+        /// The `gitoxide.user.emailFallback` key, populated from `EMAIL`.
+        ///
+        /// It is tried after `user.email` and before author- or committer-specific fallbacks.
         pub const EMAIL_FALLBACK: keys::Any =
             keys::Any::new("emailFallback", &Gitoxide::USER).with_environment_override("EMAIL");
     }
@@ -520,11 +530,13 @@ mod subsections {
 
     impl Committer {
         /// The `gitoxide.committer.nameFallback` key.
-        pub const NAME_FALLBACK: keys::Any =
-            keys::Any::new("nameFallback", &Gitoxide::COMMITTER).with_environment_override("GIT_COMMITTER_NAME");
+        ///
+        /// It is tried after `committer.name` and `user.name`.
+        pub const NAME_FALLBACK: keys::Any = keys::Any::new("nameFallback", &Gitoxide::COMMITTER);
         /// The `gitoxide.committer.emailFallback` key.
-        pub const EMAIL_FALLBACK: keys::Any =
-            keys::Any::new("emailFallback", &Gitoxide::COMMITTER).with_environment_override("GIT_COMMITTER_EMAIL");
+        ///
+        /// It is tried after `committer.email` and `user.email`.
+        pub const EMAIL_FALLBACK: keys::Any = keys::Any::new("emailFallback", &Gitoxide::COMMITTER);
     }
 
     impl Section for Committer {

@@ -2,7 +2,7 @@
 use gix_object::Exists;
 use gix_ref::{
     Target, TargetRef,
-    transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog},
+    transaction::{Change, PreviousValue, RefEdit},
 };
 
 use crate::{
@@ -104,18 +104,19 @@ pub(crate) fn update(
     ) {
         // `None` only if unborn.
         let remote_id = remote.as_id();
-        if matches!(dry_run, fetch::DryRun::No) && !remote_id.is_none_or(|id| repo.objects.exists(id)) {
-            if let Some(remote_id) = remote_id.filter(|id| !repo.objects.exists(id)) {
-                let update = if is_implicit_tag {
-                    Mode::ImplicitTagNotSentByRemote.into()
-                } else {
-                    // Assure the ODB is not to blame for the missing object.
-                    repo.try_find_object(remote_id)?;
-                    Mode::RejectedSourceObjectNotFound { id: remote_id.into() }.into()
-                };
-                updates.push(update);
-                continue;
-            }
+        if matches!(dry_run, fetch::DryRun::No)
+            && !remote_id.is_none_or(|id| repo.objects.exists(id))
+            && let Some(remote_id) = remote_id.filter(|id| !repo.objects.exists(id))
+        {
+            let update = if is_implicit_tag {
+                Mode::ImplicitTagNotSentByRemote.into()
+            } else {
+                // Assure the ODB is not to blame for the missing object.
+                repo.try_find_object(remote_id)?;
+                Mode::RejectedSourceObjectNotFound { id: remote_id.into() }.into()
+            };
+            updates.push(update);
+            continue;
         }
         let (mode, edit_index, type_change) = match local {
             Some(name) => {
@@ -209,9 +210,13 @@ pub(crate) fn update(
                                     PreviousValue::MustExistAndMatch(existing.target().into_owned()),
                                 )
                             }
-                            Err(crate::reference::peel::Error::ToId(gix_ref::peel::to_id::Error::FollowToObject(
-                                gix_ref::peel::to_object::Error::Follow(_),
-                            ))) => {
+                            Err(crate::reference::peel::Error::ToId(
+                                gix_ref::store::peel::to_id::Error::FollowToObject(
+                                    gix_ref::store::peel::to_object::Error::Follow(
+                                        gix_ref::store::find::existing::Error::NotFound { .. },
+                                    ),
+                                ),
+                            )) => {
                                 // An unborn reference, always allow it to be changed to whatever the remote wants.
                                 (
                                     if existing.target().try_name().map(gix_ref::FullNameRef::as_bstr)
@@ -268,21 +273,9 @@ pub(crate) fn update(
                     let anticipated_update_index = updates.len();
                     edit_indices_to_validate.push((anticipated_update_index, edit_index));
                 }
-                let edit = RefEdit {
-                    change: Change::Update {
-                        log: LogChange {
-                            mode: RefLog::AndReference,
-                            force_create_reflog: false,
-                            message: message.compose(reflog_message),
-                        },
-                        expected: previous_value,
-                        new,
-                    },
-                    name,
-                    // We must not deref symrefs or we will overwrite their destination, which might be checked out
-                    // and we don't check for that case.
-                    deref: false,
-                };
+                // We must not deref symrefs or we will overwrite their destination, which might be checked out
+                // and we don't check for that case.
+                let edit = RefEdit::update(name, new, previous_value, message.compose(reflog_message));
                 edits.push(edit);
                 (mode, Some(edit_index), type_change)
             }
@@ -333,16 +326,18 @@ pub(crate) fn update(
                 .map_err(crate::reference::edit::Error::from)?;
             repo.refs
                 .transaction()
-                .packed_refs(
-                    match write_packed_refs {
-                        fetch::WritePackedRefs::Only => {
-                            gix_ref::file::transaction::PackedRefs::DeletionsAndNonSymbolicUpdatesRemoveLooseSourceReference(Box::new(&repo.objects))},
-                        fetch::WritePackedRefs::Never => gix_ref::file::transaction::PackedRefs::DeletionsOnly
-                    }
-                )
+                .write_strategy(match write_packed_refs {
+                    fetch::WritePackedRefs::Only => gix_ref::store::transaction::WriteStrategy::Compact {
+                        objects: Box::new(&repo.objects),
+                        remove_separate_source: true,
+                    },
+                    fetch::WritePackedRefs::Never => gix_ref::store::transaction::WriteStrategy::Default,
+                })
                 .prepare(edits, file_lock_fail, packed_refs_lock_fail)
                 .map_err(crate::reference::edit::Error::from)?
-                .commit(repo.committer().transpose().map_err(|err| update::Error::EditReferences(crate::reference::edit::Error::ParseCommitterTime(err)))?)
+                .commit(repo.committer().transpose().map_err(|err| {
+                    update::Error::EditReferences(crate::reference::edit::Error::ParseCommitterTime(err))
+                })?)
                 .map_err(crate::reference::edit::Error::from)?
         }
         fetch::DryRun::Yes => edits,

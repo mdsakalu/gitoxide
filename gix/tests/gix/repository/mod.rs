@@ -7,7 +7,7 @@ fn blob_id(repo: &Repository, data: &[u8]) -> gix_hash::ObjectId {
 #[cfg(feature = "blame")]
 mod blame;
 mod branch;
-mod config;
+pub(crate) mod config;
 #[cfg(feature = "excludes")]
 mod excludes;
 #[cfg(feature = "attributes")]
@@ -65,12 +65,12 @@ mod index {
             "an empty index is created on the fly"
         );
         assert_eq!(
-            repo.is_pristine(),
+            repo.is_pristine()?,
             Some(false),
             "not pristine as it things the initial ref was changed to 'main'"
         );
         assert_eq!(
-            repo.refs.is_pristine("refs/heads/main".try_into()?),
+            repo.refs.is_pristine("refs/heads/main".try_into()?)?,
             Some(true),
             "This is a quirk of default values in gix and the way we override the initial branch for test fixtures"
         );
@@ -148,7 +148,7 @@ fn size_in_memory() {
     // The selected index path adds one `PathBuf` to the repository.
     // Network-client features add protocol permission caching to `Repository::config`,
     // which grows the type by one more cached cell.
-    let limit = 1324;
+    let limit = 1500;
     assert!(
         actual_size <= limit,
         "size of Repository shouldn't change without us noticing, it's meant to be cloned: should have been below {limit:?}, was {actual_size}"

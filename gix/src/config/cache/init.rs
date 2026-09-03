@@ -10,7 +10,7 @@ use crate::{
     config::{
         Cache,
         cache::util::ApplyLeniency,
-        tree::{Core, Gitoxide, Http, Notes, gitoxide},
+        tree::{Author, Committer, Core, Gitoxide, Http, Notes, gitoxide},
     },
     open,
     repository::init::setup_objects,
@@ -366,8 +366,9 @@ impl crate::Repository {
     }
 
     fn apply_changed_values(&mut self) {
-        self.refs.write_reflog = util::reflog_or_default(self.config.reflog, self.workdir().is_some());
-        self.refs.namespace.clone_from(&self.config.refs_namespace);
+        self.refs
+            .set_write_reflog(util::reflog_or_default(self.config.reflog, self.workdir().is_some()));
+        self.refs.replace_namespace(self.config.refs_namespace.clone());
     }
 }
 
@@ -538,16 +539,16 @@ fn apply_environment_overrides(
             ],
         ),
         (
-            "gitoxide",
-            Some("committer"),
+            "committer",
+            None,
             identity,
             &[
                 {
-                    let key = &gitoxide::Committer::NAME_FALLBACK;
+                    let key = &Committer::NAME;
                     (env(key), key.name)
                 },
                 {
-                    let key = &gitoxide::Committer::EMAIL_FALLBACK;
+                    let key = &Committer::EMAIL;
                     (env(key), key.name)
                 },
             ],
@@ -594,16 +595,16 @@ fn apply_environment_overrides(
             }],
         ),
         (
-            "gitoxide",
-            Some("author"),
+            "author",
+            None,
             identity,
             &[
                 {
-                    let key = &gitoxide::Author::NAME_FALLBACK;
+                    let key = &Author::NAME;
                     (env(key), key.name)
                 },
                 {
-                    let key = &gitoxide::Author::EMAIL_FALLBACK;
+                    let key = &Author::EMAIL;
                     (env(key), key.name)
                 },
             ],

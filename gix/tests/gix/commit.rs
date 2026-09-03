@@ -152,9 +152,6 @@ mod signature {
 
     #[test]
     fn sign_write_and_verify_an_ssh_commit() -> crate::Result {
-        if !signature::program_available("ssh-keygen") {
-            return Ok(());
-        }
         let (_key_home, key) = signature::ssh_private_key()?;
         let options = gix::open::Options::isolated().config_overrides([
             User::NAME.validated_assignment_fmt(&"Gitoxide Signing Fixture")?,
@@ -169,7 +166,15 @@ mod signature {
             .with_object_memory();
         let mut signing_options = repo.commit_signing_options()?;
         assert_eq!(signing_options.format, gix::commit::sign::Format::Ssh);
-        assert_eq!(signing_options.program, "ssh-keygen");
+        let expected_program = if cfg!(windows) {
+            gix::path::env::installation_program("ssh-keygen").unwrap_or_else(|| "ssh-keygen".into())
+        } else {
+            "ssh-keygen".into()
+        };
+        assert_eq!(signing_options.program, expected_program.into_os_string());
+        if !signature::program_available(&signing_options.program) {
+            return Ok(());
+        }
         assert_eq!(signing_options.signing_key, key);
         assert!(signing_options.program_arguments.is_empty());
         signing_options.program_arguments.push("-q".into());
@@ -210,6 +215,39 @@ mod signature {
         assert_eq!(options.signing_key, "Gitoxide Signing Fixture <signing@example.com>");
         assert!(options.program_arguments.is_empty());
         assert!(options.environment.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn expands_verification_program_paths() -> crate::Result {
+        let home = gix::path::env::home_dir().expect("the test environment has a home directory");
+        let mut permissions = gix::open::Permissions::isolated();
+        permissions.env.home = gix::sec::Permission::Allow;
+        let options = gix::open::Options::isolated()
+            .permissions(permissions)
+            .config_overrides([gpg::OpenPgp::PROGRAM.validated_assignment_fmt(&"~/bin/missing-gpg")?]);
+        let repo = crate::util::repo_opts("make_basic_repo.sh", options)?
+            .to_thread_local()
+            .with_object_memory();
+        let mut commit = repo.head_commit()?.decode()?.into_owned()?;
+        let signature_field = gix_object::commit::signature_field_name(commit.tree.kind());
+        commit
+            .extra_headers
+            .push((signature_field.into(), "-----BEGIN PGP SIGNATURE-----\n".into()));
+        let id = repo.write_object(&commit)?;
+        let err = repo
+            .find_commit(id)?
+            .verify_signature()
+            .expect_err("the configured verifier does not exist");
+        let gix::commit::verify::Error::Verify(gix_object::signature::verify::Error::Spawn { program, .. }) = err
+        else {
+            panic!("expected a verifier spawn failure, got {err:?}");
+        };
+        assert_eq!(
+            program,
+            home.join("bin/missing-gpg"),
+            "the configured verifier path is expanded relative to home"
+        );
         Ok(())
     }
 

@@ -103,7 +103,7 @@ impl ThreadSafeRepository {
             options.git_dir_trust = gix_sec::Trust::from_path_ownership(&git_dir)?.into();
         }
         options.current_dir = Some(cwd);
-        ThreadSafeRepository::open_from_paths(git_dir, worktree_dir, options)
+        ThreadSafeRepository::open_from_paths(git_dir, worktree_dir, options, None)
     }
 
     /// Try to open a git repository in `fallback_directory` (can be worktree or `.git` directory) only if there is no override
@@ -154,13 +154,14 @@ impl ThreadSafeRepository {
         let mut options = trust_map.into_value_by_level(git_dir_trust);
         options.git_dir_trust = git_dir_trust.into();
         options.current_dir = Some(cwd);
-        ThreadSafeRepository::open_from_paths(git_dir, worktree_dir, options)
+        ThreadSafeRepository::open_from_paths(git_dir, worktree_dir, options, None)
     }
 
     pub(crate) fn open_from_paths(
         mut git_dir: PathBuf,
         mut worktree_dir: Option<PathBuf>,
         mut options: Options,
+        known_common_dir: Option<PathBuf>,
     ) -> Result<Self, Error> {
         let _span = gix_trace::detail!("open_from_paths()");
         options.open_path_as_is = false;
@@ -185,9 +186,12 @@ impl ThreadSafeRepository {
         } = options;
         let git_dir_trust = git_dir_trust.as_mut().expect("trust must be determined by now");
 
-        let mut common_dir = gix_discover::path::from_plain_file(git_dir.join("commondir").as_ref())
-            .transpose()?
-            .map(|cd| git_dir.join(cd));
+        let mut common_dir = match known_common_dir {
+            Some(common_dir) => Some(common_dir),
+            None => gix_discover::path::from_plain_file(git_dir.join("commondir").as_ref())
+                .transpose()?
+                .map(|cd| git_dir.join(cd)),
+        };
         let repo_config = config::cache::StageOne::new(
             common_dir.as_deref().unwrap_or(&git_dir),
             git_dir.as_ref(),
@@ -198,25 +202,25 @@ impl ThreadSafeRepository {
 
         if repo_config.precompose_unicode {
             git_dir = gix_utils::str::precompose_path(git_dir.into()).into_owned();
-            if let Some(common_dir) = common_dir.as_mut() {
-                if let Cow::Owned(precomposed) = gix_utils::str::precompose_path((&*common_dir).into()) {
-                    *common_dir = precomposed;
-                }
+            if let Some(common_dir) = common_dir.as_mut()
+                && let Cow::Owned(precomposed) = gix_utils::str::precompose_path((&*common_dir).into())
+            {
+                *common_dir = precomposed;
             }
-            if let Some(worktree_dir) = worktree_dir.as_mut() {
-                if let Cow::Owned(precomposed) = gix_utils::str::precompose_path((&*worktree_dir).into()) {
-                    *worktree_dir = precomposed;
-                }
+            if let Some(worktree_dir) = worktree_dir.as_mut()
+                && let Cow::Owned(precomposed) = gix_utils::str::precompose_path((&*worktree_dir).into())
+            {
+                *worktree_dir = precomposed;
             }
         }
         let common_dir_ref = common_dir.as_deref().unwrap_or(&git_dir);
 
         let current_dir = {
             let current_dir_ref = current_dir.as_mut().expect("BUG: current_dir must be set by caller");
-            if repo_config.precompose_unicode {
-                if let Cow::Owned(precomposed) = gix_utils::str::precompose_path((&*current_dir_ref).into()) {
-                    *current_dir_ref = precomposed;
-                }
+            if repo_config.precompose_unicode
+                && let Cow::Owned(precomposed) = gix_utils::str::precompose_path((&*current_dir_ref).into())
+            {
+                *current_dir_ref = precomposed;
             }
             current_dir_ref.as_path()
         };
@@ -427,8 +431,11 @@ impl ThreadSafeRepository {
             None => git_dir.join("index"),
         };
 
-        refs.write_reflog = config::cache::util::reflog_or_default(config.reflog, worktree_dir.is_some());
-        refs.namespace.clone_from(&config.refs_namespace);
+        refs.set_write_reflog(config::cache::util::reflog_or_default(
+            config.reflog,
+            worktree_dir.is_some(),
+        ));
+        refs.replace_namespace(config.refs_namespace.clone());
         let prefix = replacement_objects_refs_prefix(&config.resolved, lenient_config, filter_config_section)?;
 
         if *git_dir_trust == gix_sec::Trust::Reduced && config.alloc_limit_bytes.is_none() {
@@ -609,10 +616,12 @@ fn check_safe_directories(
     safe_dirs: &[BString],
 ) -> Result<(), Error> {
     let mut is_safe = false;
-    let path_to_test = match gix_path::realpath_opts(path_to_test, current_dir, gix_path::realpath::MAX_SYMLINKS) {
-        Ok(p) => p,
-        Err(_) => path_to_test.to_owned(),
+    let realpath_or_original = |path: &std::path::Path| {
+        std::fs::canonicalize(path)
+            .or_else(|_| gix_path::realpath_opts(path, current_dir, gix_path::realpath::MAX_SYMLINKS))
+            .unwrap_or_else(|_| path.to_owned())
     };
+    let path_to_test = realpath_or_original(path_to_test);
     for safe_dir in safe_dirs {
         let safe_dir = safe_dir.as_bstr();
         if safe_dir == "*" {
@@ -638,10 +647,10 @@ fn check_safe_directories(
             }
             if safe_dir.ends_with("*") {
                 let safe_dir = safe_dir.parent().expect("* is last component");
-                if path_to_test.strip_prefix(safe_dir).is_ok() {
+                if path_to_test.strip_prefix(realpath_or_original(safe_dir)).is_ok() {
                     is_safe = true;
                 }
-            } else if safe_dir == path_to_test {
+            } else if realpath_or_original(&safe_dir) == path_to_test {
                 is_safe = true;
             }
         }

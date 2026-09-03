@@ -9,7 +9,7 @@ description = "Discover git repositories and check if a directory is a git repos
 authors = ["Sebastian Thiel <sebastian.thiel@icloud.com>"]
 edition = "2024"
 include = ["/src/**/*", "/LICENSE-*"]
-rust-version = "1.85"
+rust-version = "1.88"
 
 [lib]
 doctest = true
@@ -22,7 +22,7 @@ sha256 = ["gix-ref/sha256"]
 
 [dependencies]
 gix-sec = { version = "^0.14.2", path = "../gix-sec" }
-gix-path = { version = "^0.12.5", path = "../gix-path" }
+gix-path = { version = "^0.12.6", path = "../gix-path" }
 gix-ref = { version = "^0.67.0", path = "../gix-ref" }
 gix-fs = { version = "^0.22.1", path = "../gix-fs" }
 
